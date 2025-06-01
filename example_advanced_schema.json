@@ -1,0 +1,55 @@
+{
+  "required": {
+    "config": {
+      "required": {
+        "settings.json": {},
+        "env.yaml": {}
+      }
+    },
+    "data": {
+      "required": {
+        "*.csv": {"pattern": true},
+        "processed": {
+          "optional": {
+            "*.json": {"pattern": true}
+          }
+        }
+      }
+    },
+    "src": {
+      "required": {
+        "main.py": {
+          "content_validators": ["python_syntax"]
+        },
+        "utils": {
+          "required": {
+            "helpers.py": {},
+            "config.py": {}
+          }
+        },
+        "models": {
+          "optional": {
+            "*.py": {"pattern": true}
+          }
+        }
+      }
+    },
+    "docs": {
+      "optional": {
+        "README.md": {},
+        "api.json": {
+          "content_validators": ["json_syntax"]
+        }
+      }
+    }
+  },
+  "optional": {
+    "tests": {
+      "required": {
+        "test_*.py": {"pattern": true}
+      }
+    },
+    "logs": {},
+    ".git": {}
+  }
+}
