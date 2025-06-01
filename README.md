@@ -105,6 +105,16 @@ python folder_schema_validator.py --schema python_project_schema.json --director
 
 ## Installation
 
+### PyPI Installation
+
+The easiest way to install the Folder Schema Validator is via pip:
+
+```bash
+pip install folder-schema-validator
+```
+
+### Manual Installation
+
 ```bash
 # Clone the repository
 git clone https://github.com/yourusername/folder-schema-validator.git
@@ -596,6 +606,10 @@ validator = AdvancedFolderValidator(
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
+## CI/CD
+
+This project uses GitHub Actions for continuous integration and deployment. When a new release is created on GitHub, the package is automatically published to PyPI.
 
 1. Fork the repository
 2. Create your feature branch (`git checkout -b feature/amazing-feature`)
