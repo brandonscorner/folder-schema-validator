@@ -30,13 +30,7 @@ import multiprocessing
 from pathlib import Path
 from collections import defaultdict
 from typing import Dict, List, Optional, Any, Union, Tuple, Set, Callable, Type, Iterator, Generator
-from pathlib import Path
-from collections import defaultdict
 from functools import lru_cache
-# Imports are handled at the beginningimport Dict, List, Any, Optional, Callable, Set, Tuple, Generator, TypeVar, Generic, Union, Pattern
-
-
-#!/usr/bin/env python3
 
 
 import os
@@ -49,11 +43,6 @@ import hashlib
 import inspect
 import argparse
 import importlib
-import multiprocessing
-from pathlib import Path
-from collections import defaultdict
-from functools import lru_cache
-# Imports are handled at the beginningimport Dict, List, Any, Optional, Callable, Set, Tuple, Generator, TypeVar, Generic, Union, Pattern
 
 
 class FolderSchema:
@@ -1530,5 +1519,388 @@ def main():
         sys.exit(0)
 
 
+def generate_schema_from_directory(directory_path: str, output_file: Optional[str] = None,
+                              ignore_patterns: Optional[List[str]] = None,
+                              include_file_properties: bool = False,
+                              max_depth: Optional[int] = None) -> Dict[str, Any]:
+    """
+    Generate a folder schema by analyzing an existing directory structure.
+    
+    Args:
+        directory_path: Path to the directory to analyze
+        output_file: Path to save the generated schema to (optional)
+        ignore_patterns: List of patterns to ignore (e.g. ["*.pyc", "__pycache__", ".git"])
+        include_file_properties: Whether to include additional file properties like size
+        max_depth: Maximum depth to traverse (None for unlimited)
+        
+    Returns:
+        Dictionary representing the generated schema
+    """
+    ignore_patterns = ignore_patterns or ["*.pyc", "__pycache__", ".git", ".svn", ".hg", ".DS_Store", "*.swp", "*.bak"]
+    
+    # Create a schema instance
+    schema = AdvancedFolderSchema()
+    
+    # Helper function to recursively traverse the directory
+    def traverse_directory(current_path: str, rel_path: str, depth: int = 0):
+        # Check max depth
+        if max_depth is not None and depth > max_depth:
+            return {}
+        
+        result = {}
+        items = os.listdir(current_path)
+        
+        for item in items:
+            item_path = os.path.join(current_path, item)
+            item_rel_path = os.path.join(rel_path, item) if rel_path else item
+            
+            # Check if this item should be ignored
+            if any(fnmatch.fnmatch(item, pattern) for pattern in ignore_patterns):
+                continue
+                
+            if os.path.isdir(item_path):
+                # It's a directory
+                children = traverse_directory(item_path, item_rel_path, depth + 1)
+                result[item] = {
+                    "type": "directory",
+                    "required": True,
+                    "children": children
+                }
+            else:
+                # It's a file
+                file_props = {
+                    "type": "file",
+                    "required": True
+                }
+                
+                # Add additional file properties if requested
+                if include_file_properties:
+                    file_stats = os.stat(item_path)
+                    file_props["size"] = file_stats.st_size
+                    file_props["modified"] = file_stats.st_mtime
+                    
+                    # Try to determine file type
+                    if item.endswith(".py"):
+                        file_props["file_type"] = "python"
+                    elif item.endswith(".json"):
+                        file_props["file_type"] = "json"
+                    elif item.endswith((".md", ".markdown")):
+                        file_props["file_type"] = "markdown"
+                    elif item.endswith((".yml", ".yaml")):
+                        file_props["file_type"] = "yaml"
+                    
+                result[item] = file_props
+                
+        return result
+    
+    # Start traversal from the root directory
+    schema_dict = traverse_directory(directory_path, "")
+    schema.schema = schema_dict
+    
+    # Save to file if requested
+    if output_file:
+        with open(output_file, 'w') as f:
+            json.dump(schema_dict, f, indent=4)
+    
+    return schema_dict
+
+
+class SchemaGenerator:
+    """
+    Class to generate folder structure schemas from existing directories.
+    """
+    
+    def __init__(self, ignore_patterns: Optional[List[str]] = None):
+        """
+        Initialize a schema generator.
+        
+        Args:
+            ignore_patterns: List of patterns to ignore
+        """
+        self.ignore_patterns = ignore_patterns or [
+            "*.pyc", "__pycache__", ".git", ".svn", ".hg", 
+            ".DS_Store", "*.swp", "*.bak", "node_modules",
+            ".idea", ".vscode", "*.class", "*.o", "*.so"
+        ]
+    
+    def generate_schema(self, directory_path: str, 
+                        output_file: Optional[str] = None,
+                        schema_class: Type = AdvancedFolderSchema,
+                        include_file_properties: bool = False,
+                        detect_patterns: bool = False,
+                        max_depth: Optional[int] = None) -> Any:
+        """
+        Generate a folder schema by analyzing an existing directory structure.
+        
+        Args:
+            directory_path: Path to the directory to analyze
+            output_file: Path to save the generated schema to
+            schema_class: Class to use for the schema (default: AdvancedFolderSchema)
+            include_file_properties: Whether to include additional file properties
+            detect_patterns: Try to detect patterns in filenames
+            max_depth: Maximum depth to traverse (None for unlimited)
+            
+        Returns:
+            Generated schema instance
+        """
+        # Create a schema instance of the specified class
+        schema_instance = schema_class()
+        
+        # Helper function to detect patterns in a list of names
+        def detect_name_pattern(names):
+            if len(names) < 3:
+                return None
+                
+            # Check for numeric patterns (e.g., file1.txt, file2.txt)
+            if all(re.match(r'(.*?)\d+(.*)', name) for name in names):
+                # Extract the common prefix and suffix
+                prefixes = [re.match(r'(.*?)\d+(.*)', name).group(1) for name in names]
+                suffixes = [re.match(r'(.*?)\d+(.*)', name).group(2) for name in names]
+                
+                if len(set(prefixes)) == 1 and len(set(suffixes)) == 1:
+                    return f"{prefixes[0]}\\d+{suffixes[0]}"
+            
+            return None
+        
+        # Helper function to recursively traverse the directory
+        def traverse_directory(current_path: str, rel_path: str, depth: int = 0):
+            # Check max depth
+            if max_depth is not None and depth > max_depth:
+                return {}
+            
+            result = {}
+            try:
+                items = os.listdir(current_path)
+                
+                # Group similar files for pattern detection
+                if detect_patterns:
+                    files = []
+                    dirs = []
+                    
+                    for item in items:
+                        item_path = os.path.join(current_path, item)
+                        if any(fnmatch.fnmatch(item, pattern) for pattern in self.ignore_patterns):
+                            continue
+                        
+                        if os.path.isdir(item_path):
+                            dirs.append(item)
+                        else:
+                            files.append(item)
+                    
+                    # Try to detect file patterns
+                    file_pattern = detect_name_pattern(files)
+                    if file_pattern:
+                        # Add a pattern file instead of individual files
+                        result[file_pattern] = {
+                            "type": "file",
+                            "required": True,
+                            "pattern_type": "regex"
+                        }
+                        # Remove the matched files so we don't process them individually
+                        files = []
+                    
+                    # Try to detect directory patterns
+                    dir_pattern = detect_name_pattern(dirs)
+                    if dir_pattern:
+                        # We'll need to sample one directory to get its structure
+                        sample_dir = dirs[0]
+                        sample_path = os.path.join(current_path, sample_dir)
+                        sample_rel_path = os.path.join(rel_path, sample_dir) if rel_path else sample_dir
+                        
+                        children = traverse_directory(sample_path, sample_rel_path, depth + 1)
+                        result[dir_pattern] = {
+                            "type": "directory",
+                            "required": True,
+                            "pattern_type": "regex",
+                            "children": children
+                        }
+                        # Remove the matched dirs so we don't process them individually
+                        dirs = [f for f in dirs if not re.match(dir_pattern, f)]
+                    
+                    # Process remaining individual items
+                    items = files + dirs
+                
+                # Process each item in the directory
+                for item in items:
+                    item_path = os.path.join(current_path, item)
+                    item_rel_path = os.path.join(rel_path, item) if rel_path else item
+                    
+                    # Check if this item should be ignored
+                    if any(fnmatch.fnmatch(item, pattern) for pattern in self.ignore_patterns):
+                        continue
+                        
+                    if os.path.isdir(item_path):
+                        # It's a directory
+                        children = traverse_directory(item_path, item_rel_path, depth + 1)
+                        result[item] = {
+                            "type": "directory",
+                            "required": True,
+                            "children": children
+                        }
+                    else:
+                        # It's a file
+                        file_props = {
+                            "type": "file",
+                            "required": True
+                        }
+                        
+                        # Add additional file properties if requested
+                        if include_file_properties:
+                            file_stats = os.stat(item_path)
+                            file_props["size"] = file_stats.st_size
+                            
+                            # Try to determine file type
+                            if item.endswith(".py"):
+                                file_props["file_type"] = "python"
+                            elif item.endswith(".json"):
+                                file_props["file_type"] = "json"
+                            elif item.endswith((".md", ".markdown")):
+                                file_props["file_type"] = "markdown"
+                            
+                        result[item] = file_props
+            except (PermissionError, FileNotFoundError) as e:
+                # Handle permission errors or deleted files during traversal
+                print(f"Error accessing {current_path}: {e}")
+                
+            return result
+        
+        # Start traversal from the root directory
+        schema_dict = traverse_directory(directory_path, "")
+        schema_instance.schema = schema_dict
+        
+        # Save to file if requested
+        if output_file:
+            schema_instance.save(output_file)
+        
+        return schema_instance
+    
+    def analyze_directory(self, directory_path: str) -> Dict[str, Any]:
+        """
+        Analyze a directory and return statistics about its structure.
+        
+        Args:
+            directory_path: Path to the directory to analyze
+            
+        Returns:
+            Dictionary with statistics about the directory structure
+        """
+        stats = {
+            "total_files": 0,
+            "total_dirs": 0,
+            "max_depth": 0,
+            "file_types": defaultdict(int),
+            "avg_files_per_dir": 0,
+            "largest_file": {
+                "path": "",
+                "size": 0
+            },
+            "deepest_path": ""
+        }
+        
+        dirs_with_files = 0
+        
+        # Helper function to recursively traverse the directory
+        def analyze_recursive(current_path: str, rel_path: str, depth: int = 0):
+            nonlocal dirs_with_files
+            
+            stats["max_depth"] = max(stats["max_depth"], depth)
+            if depth == stats["max_depth"]:
+                stats["deepest_path"] = rel_path
+            
+            try:
+                items = os.listdir(current_path)
+                
+                files_in_current_dir = 0
+                stats["total_dirs"] += 1
+                
+                for item in items:
+                    item_path = os.path.join(current_path, item)
+                    item_rel_path = os.path.join(rel_path, item) if rel_path else item
+                    
+                    # Check if this item should be ignored
+                    if any(fnmatch.fnmatch(item, pattern) for pattern in self.ignore_patterns):
+                        continue
+                        
+                    if os.path.isdir(item_path):
+                        # Recursively analyze subdirectory
+                        analyze_recursive(item_path, item_rel_path, depth + 1)
+                    else:
+                        # It's a file
+                        stats["total_files"] += 1
+                        files_in_current_dir += 1
+                        
+                        # Get file extension
+                        _, ext = os.path.splitext(item)
+                        ext = ext.lower()[1:] if ext else "(no extension)"
+                        stats["file_types"][ext] += 1
+                        
+                        # Check if it's the largest file
+                        file_size = os.path.getsize(item_path)
+                        if file_size > stats["largest_file"]["size"]:
+                            stats["largest_file"]["size"] = file_size
+                            stats["largest_file"]["path"] = item_rel_path
+                
+                if files_in_current_dir > 0:
+                    dirs_with_files += 1
+            except (PermissionError, FileNotFoundError) as e:
+                print(f"Error accessing {current_path}: {e}")
+        
+        # Start analysis from the root directory
+        analyze_recursive(directory_path, "")
+        
+        # Calculate average files per directory
+        if dirs_with_files > 0:
+            stats["avg_files_per_dir"] = stats["total_files"] / dirs_with_files
+        
+        # Convert defaultdict to regular dict for better JSON serialization
+        stats["file_types"] = dict(stats["file_types"])
+        
+        return stats
+
+
+def generate_schema_cli():
+    """
+    Command-line interface for generating a schema from an existing directory.
+    """
+    parser = argparse.ArgumentParser(description="Generate a folder schema from an existing directory")
+    parser.add_argument("directory", help="Directory to analyze")
+    parser.add_argument("-o", "--output", help="Output file for the schema")
+    parser.add_argument("-i", "--ignore", nargs="+", help="Patterns to ignore (e.g. *.pyc __pycache__)")
+    parser.add_argument("-p", "--properties", action="store_true", help="Include file properties")
+    parser.add_argument("-d", "--detect-patterns", action="store_true", help="Try to detect patterns")
+    parser.add_argument("-m", "--max-depth", type=int, help="Maximum depth to traverse")
+    parser.add_argument("--analyze", action="store_true", help="Analyze directory and print statistics")
+    
+    args = parser.parse_args()
+    
+    # Create schema generator
+    generator = SchemaGenerator(ignore_patterns=args.ignore)
+    
+    if args.analyze:
+        # Analyze directory and print statistics
+        stats = generator.analyze_directory(args.directory)
+        print(json.dumps(stats, indent=4))
+    else:
+        # Generate schema
+        schema = generator.generate_schema(
+            directory_path=args.directory,
+            output_file=args.output,
+            include_file_properties=args.properties,
+            detect_patterns=args.detect_patterns,
+            max_depth=args.max_depth
+        )
+        
+        # If no output file specified, print to stdout
+        if not args.output:
+            print(json.dumps(schema.schema, indent=4))
+        else:
+            print(f"Schema saved to {args.output}")
+
+
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) > 1 and sys.argv[1] == "generate":
+        # Remove the 'generate' argument
+        sys.argv.pop(1)
+        generate_schema_cli()
+    else:
+        main()

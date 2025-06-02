@@ -6,4 +6,4 @@ A Python tool for validating folder structures against defined schemas with wild
 
 from .core import *
 
-__version__ = "0.1.3"
+__version__ = "0.1.4"
