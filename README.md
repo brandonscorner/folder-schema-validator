@@ -18,6 +18,7 @@ A comprehensive Python tool for defining folder structure blueprints and validat
 - [Validation Modes](#validation-modes)
 - [Custom Validators](#custom-validators)
 - [Performance Optimization](#performance-optimization)
+- [Schema Generation](#schema-generation)
 - [Real-World Examples](#real-world-examples)
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
@@ -979,6 +980,61 @@ python -m folder_schema_validator -s schema.json -d /path/to/project \
     --cache --parallel --workers 8 --lazy \
     --ignore "**/__pycache__" --ignore "**/.git"
 ```
+
+## Schema Generation
+
+The Folder Schema Validator includes powerful tools to automatically generate schemas from existing directory structures, saving you time when starting with validation for an existing project.
+
+### Command Line Schema Generation
+
+```bash
+# Generate a schema from an existing directory structure
+python -m folder_schema_validator generate-schema --directory /path/to/your/project --output schema.json
+
+# Advanced options
+python -m folder_schema_validator generate-schema --directory /path/to/your/project \
+    --output schema.json \
+    --ignore "*.pyc" --ignore "__pycache__" --ignore ".git" \
+    --include-properties --detect-patterns --max-depth 5
+```
+
+### Python API for Schema Generation
+
+```python
+from folder_schema_validator import SchemaGenerator
+
+# Create a generator with custom ignore patterns
+generator = SchemaGenerator(ignore_patterns=["*.pyc", "__pycache__", ".git"])
+
+# Generate a schema from an existing directory
+schema = generator.generate_schema(
+    directory_path="/path/to/your/project",
+    output_file="schema.json",  # Optional: save to file
+    include_file_properties=True,  # Include size info, etc.
+    detect_patterns=True,  # Try to detect patterns in filenames
+    max_depth=5  # Limit traversal depth
+)
+
+# Analyze directory statistics
+stats = generator.analyze_directory("/path/to/your/project")
+print(f"Total files: {stats['total_files']}")
+print(f"Total directories: {stats['total_directories']}")
+print(f"Max depth: {stats['max_depth']}")
+```
+
+### Using Generated Schemas
+
+Generated schemas provide a starting point based on your existing directory structure:
+
+1. **Generate** a schema from your existing project
+2. **Customize** the generated schema to add or remove requirements
+3. **Validate** other directories against this schema
+
+This workflow is especially useful when:
+- Documenting an existing project's structure
+- Creating a template based on a reference implementation
+- Setting up validation for similar projects
+- Analyzing differences between directory structures
 
 ## Real-World Examples
 
